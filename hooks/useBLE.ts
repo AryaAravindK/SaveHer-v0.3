@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Mock BLE functionality for web platform
 const WebBLEManager = {
@@ -27,11 +28,24 @@ if (Platform.OS !== 'web') {
 
 const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+const SOS_STORAGE_KEY = 'sos_signals';
+
+export interface SOSSignal {
+  id: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+  timestamp: string;
+  deviceId: string;
+}
 
 export const useBLE = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<any[]>([]);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [receivedSignals, setReceivedSignals] = useState<SOSSignal[]>([]);
   
   // Initialize with web mock or native manager
   const [bleManager] = useState(() => {
@@ -49,6 +63,7 @@ export const useBLE = () => {
     const subscription = bleManager?.onStateChange((state: string) => {
       if (state === 'PoweredOn') {
         console.log('Bluetooth is powered on');
+        loadStoredSignals();
       }
     }, true);
 
@@ -60,6 +75,29 @@ export const useBLE = () => {
     };
   }, [bleManager]);
 
+  const loadStoredSignals = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(SOS_STORAGE_KEY);
+      if (stored) {
+        setReceivedSignals(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Error loading stored signals:', error);
+    }
+  };
+
+  const storeSignal = async (signal: SOSSignal) => {
+    try {
+      const existing = await AsyncStorage.getItem(SOS_STORAGE_KEY);
+      const signals = existing ? JSON.parse(existing) : [];
+      const updated = [signal, ...signals.slice(0, 49)]; // Keep last 50 signals
+      await AsyncStorage.setItem(SOS_STORAGE_KEY, JSON.stringify(updated));
+      setReceivedSignals(updated);
+    } catch (error) {
+      console.error('Error storing signal:', error);
+    }
+  };
+
   const startBroadcasting = async (userData: any) => {
     try {
       if (Platform.OS === 'web') {
@@ -68,16 +106,25 @@ export const useBLE = () => {
         return;
       }
 
+      const sosData = {
+        type: 'SOS',
+        ...userData,
+        deviceId: Math.random().toString(36).substr(2, 9)
+      };
+
       if (Platform.OS === 'android') {
         await bleManager.startAdvertising({
           serviceUUIDs: [SERVICE_UUID],
-          manufacturerData: Buffer.from(JSON.stringify(userData)).toString('base64'),
+          manufacturerData: Buffer.from(JSON.stringify(sosData)).toString('base64'),
+          localName: 'SaveHer_SOS'
         });
       }
       setIsBroadcasting(true);
+      console.log('Broadcasting SOS signal:', sosData);
     } catch (error) {
       console.error('Error broadcasting:', error);
       setIsBroadcasting(false);
+      Alert.alert('Error', 'Failed to broadcast SOS signal. Please check Bluetooth permissions.');
     }
   };
 
@@ -93,9 +140,69 @@ export const useBLE = () => {
         await bleManager.stopAdvertising();
       }
       setIsBroadcasting(false);
+      console.log('Stopped broadcasting SOS signal');
     } catch (error) {
       console.error('Error stopping broadcast:', error);
     }
+  };
+
+  const startListening = async (onSignalReceived?: (signal: SOSSignal) => void) => {
+    try {
+      if (Platform.OS === 'web') {
+        console.log('BLE listening not available on web platform');
+        setIsListening(true);
+        return;
+      }
+
+      setIsListening(true);
+      console.log('Started listening for SOS signals...');
+      
+      bleManager.startDeviceScan(null, {
+        allowDuplicates: true,
+      }, (error: any, device: any) => {
+        if (error) {
+          console.error('Scan error:', error);
+          return;
+        }
+        
+        if (device && device.manufacturerData) {
+          try {
+            const data = Buffer.from(device.manufacturerData, 'base64').toString();
+            const sosData = JSON.parse(data);
+            
+            if (sosData.type === 'SOS' && sosData.location) {
+              const signal: SOSSignal = {
+                id: sosData.deviceId || device.id,
+                location: sosData.location,
+                timestamp: sosData.timestamp,
+                deviceId: sosData.deviceId || device.id
+              };
+              
+              console.log('Received SOS signal:', signal);
+              storeSignal(signal);
+              onSignalReceived?.(signal);
+            }
+          } catch (parseError) {
+            // Not an SOS signal, ignore
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error starting listening:', error);
+      setIsListening(false);
+      Alert.alert('Error', 'Failed to start listening for SOS signals. Please check Bluetooth permissions.');
+    }
+  };
+
+  const stopListening = () => {
+    if (Platform.OS === 'web') {
+      setIsListening(false);
+      return;
+    }
+    
+    bleManager?.stopDeviceScan();
+    setIsListening(false);
+    console.log('Stopped listening for SOS signals');
   };
 
   const startScanning = async () => {
@@ -142,10 +249,14 @@ export const useBLE = () => {
   return {
     startBroadcasting,
     stopBroadcasting,
+    startListening,
+    stopListening,
     startScanning,
     stopScanning,
     isScanning,
     isBroadcasting,
+    isListening,
     devices,
+    receivedSignals,
   };
 };
