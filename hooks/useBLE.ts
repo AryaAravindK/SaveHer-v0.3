@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Device from 'expo-device';
 
 // Mock BLE functionality for web platform
 const WebBLEManager = {
@@ -16,10 +17,12 @@ const WebBLEManager = {
 
 // Only import BLE dependencies for native platforms
 let BleManager;
+let State;
 if (Platform.OS !== 'web') {
   try {
-    const { BleManager: NativeBleManager } = require('react-native-ble-plx');
+    const { BleManager: NativeBleManager, State: BLEState } = require('react-native-ble-plx');
     BleManager = NativeBleManager;
+    State = BLEState;
   } catch (error) {
     console.warn('BLE functionality not available:', error);
     BleManager = null;
@@ -29,6 +32,7 @@ if (Platform.OS !== 'web') {
 const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const CHARACTERISTIC_UUID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
 const SOS_STORAGE_KEY = 'sos_signals';
+const SAVEHER_DEVICE_PREFIX = 'SaveHer_';
 
 export interface SOSSignal {
   id: string;
@@ -60,10 +64,13 @@ export const useBLE = () => {
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    const subscription = bleManager?.onStateChange((state: string) => {
-      if (state === 'PoweredOn') {
+    const subscription = bleManager?.onStateChange((state: any) => {
+      console.log('Bluetooth state changed:', state);
+      if (state === 'PoweredOn' || state === State?.PoweredOn) {
         console.log('Bluetooth is powered on');
         loadStoredSignals();
+      } else {
+        console.log('Bluetooth is not available or turned off');
       }
     }, true);
 
@@ -106,25 +113,37 @@ export const useBLE = () => {
         return;
       }
 
+      // Check if Bluetooth is available and enabled
+      const state = await bleManager.state();
+      if (state !== 'PoweredOn' && state !== State?.PoweredOn) {
+        throw new Error('Bluetooth is not enabled. Please turn on Bluetooth and try again.');
+      }
+
       const sosData = {
         type: 'SOS',
         ...userData,
-        deviceId: Math.random().toString(36).substr(2, 9)
+        deviceId: Device.deviceName || Math.random().toString(36).substr(2, 9),
+        deviceModel: Device.modelName || 'Unknown'
       };
 
-      if (Platform.OS === 'android') {
-        await bleManager.startAdvertising({
-          serviceUUIDs: [SERVICE_UUID],
-          manufacturerData: Buffer.from(JSON.stringify(sosData)).toString('base64'),
-          localName: 'SaveHer_SOS'
-        });
-      }
+      console.log('Starting BLE advertising with data:', sosData);
+      
+      // For Android, use advertising
+      await bleManager.startAdvertising({
+        serviceUUIDs: [SERVICE_UUID],
+        manufacturerData: Buffer.from(JSON.stringify(sosData)).toString('base64'),
+        localName: `${SAVEHER_DEVICE_PREFIX}SOS_${sosData.deviceId.slice(-4)}`
+      });
+      
       setIsBroadcasting(true);
       console.log('Broadcasting SOS signal:', sosData);
     } catch (error) {
       console.error('Error broadcasting:', error);
       setIsBroadcasting(false);
-      Alert.alert('Error', 'Failed to broadcast SOS signal. Please check Bluetooth permissions.');
+      Alert.alert(
+        'Bluetooth Error', 
+        `Failed to broadcast SOS signal: ${error.message}. Please ensure Bluetooth is enabled and permissions are granted.`
+      );
     }
   };
 
@@ -136,9 +155,7 @@ export const useBLE = () => {
         return;
       }
 
-      if (Platform.OS === 'android') {
-        await bleManager.stopAdvertising();
-      }
+      await bleManager.stopAdvertising();
       setIsBroadcasting(false);
       console.log('Stopped broadcasting SOS signal');
     } catch (error) {
@@ -154,21 +171,37 @@ export const useBLE = () => {
         return;
       }
 
+      // Check if Bluetooth is available and enabled
+      const state = await bleManager.state();
+      if (state !== 'PoweredOn' && state !== State?.PoweredOn) {
+        throw new Error('Bluetooth is not enabled. Please turn on Bluetooth and try again.');
+      }
+
       setIsListening(true);
       console.log('Started listening for SOS signals...');
       
+      // Clear any existing scan
+      bleManager.stopDeviceScan();
+      
       bleManager.startDeviceScan(null, {
         allowDuplicates: true,
+        scanMode: 'LowLatency', // For faster discovery on Android
       }, (error: any, device: any) => {
         if (error) {
           console.error('Scan error:', error);
           return;
         }
         
-        if (device && device.manufacturerData) {
+        // Check if this is a SaveHer device
+        if (device && (device.name?.startsWith(SAVEHER_DEVICE_PREFIX) || device.manufacturerData)) {
           try {
-            const data = Buffer.from(device.manufacturerData, 'base64').toString();
-            const sosData = JSON.parse(data);
+            let sosData = null;
+            
+            // Try to parse manufacturer data
+            if (device.manufacturerData) {
+              const data = Buffer.from(device.manufacturerData, 'base64').toString();
+              sosData = JSON.parse(data);
+            }
             
             if (sosData.type === 'SOS' && sosData.location) {
               const signal: SOSSignal = {
@@ -183,14 +216,17 @@ export const useBLE = () => {
               onSignalReceived?.(signal);
             }
           } catch (parseError) {
-            // Not an SOS signal, ignore
+            console.log('Could not parse device data, not an SOS signal');
           }
         }
       });
     } catch (error) {
       console.error('Error starting listening:', error);
       setIsListening(false);
-      Alert.alert('Error', 'Failed to start listening for SOS signals. Please check Bluetooth permissions.');
+      Alert.alert(
+        'Bluetooth Error', 
+        `Failed to start listening for SOS signals: ${error.message}. Please ensure Bluetooth is enabled and permissions are granted.`
+      );
     }
   };
 
@@ -213,15 +249,22 @@ export const useBLE = () => {
         return;
       }
 
+      // Check if Bluetooth is available and enabled
+      const state = await bleManager.state();
+      if (state !== 'PoweredOn' && state !== State?.PoweredOn) {
+        throw new Error('Bluetooth is not enabled. Please turn on Bluetooth and try again.');
+      }
+
       setIsScanning(true);
-      bleManager.startDeviceScan([SERVICE_UUID], {
+      bleManager.startDeviceScan(null, {
         allowDuplicates: false,
+        scanMode: 'LowLatency',
       }, (error: any, device: any) => {
         if (error) {
           console.error('Scan error:', error);
           return;
         }
-        if (device) {
+        if (device && device.name?.startsWith(SAVEHER_DEVICE_PREFIX)) {
           setDevices(prev => {
             if (prev.find(d => d.id === device.id)) {
               return prev;
@@ -233,6 +276,10 @@ export const useBLE = () => {
     } catch (error) {
       console.error('Error starting scan:', error);
       setIsScanning(false);
+      Alert.alert(
+        'Bluetooth Error', 
+        `Failed to start scanning: ${error.message}. Please ensure Bluetooth is enabled and permissions are granted.`
+      );
     }
   };
 

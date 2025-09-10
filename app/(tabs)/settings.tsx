@@ -1,10 +1,12 @@
 import { View, StyleSheet, Text, Switch, TouchableOpacity } from 'react-native';
 import { useState } from 'react';
+import { useBLE } from '@/hooks/useBLE';
 
 export default function SettingsScreen() {
   const [isReceiverMode, setIsReceiverMode] = useState(true);
   const [autoActivate, setAutoActivate] = useState(false);
   const [highPriorityAlerts, setHighPriorityAlerts] = useState(true);
+  const { receivedSignals } = useBLE();
 
   return (
     <View style={styles.container}>
@@ -14,6 +16,9 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>Mode Settings</Text>
         <View style={styles.setting}>
           <Text style={styles.settingText}>Receiver Mode</Text>
+          <Text style={styles.settingDescription}>
+            Listen for emergency signals from nearby devices
+          </Text>
           <Switch
             value={isReceiverMode}
             onValueChange={setIsReceiverMode}
@@ -27,6 +32,9 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>Emergency Settings</Text>
         <View style={styles.setting}>
           <Text style={styles.settingText}>Auto-activate in danger zones</Text>
+          <Text style={styles.settingDescription}>
+            Automatically start listening in high-risk areas
+          </Text>
           <Switch
             value={autoActivate}
             onValueChange={setAutoActivate}
@@ -36,6 +44,9 @@ export default function SettingsScreen() {
         </View>
         <View style={styles.setting}>
           <Text style={styles.settingText}>High Priority Alerts</Text>
+          <Text style={styles.settingDescription}>
+            Show emergency alerts even when phone is silent
+          </Text>
           <Switch
             value={highPriorityAlerts}
             onValueChange={setHighPriorityAlerts}
@@ -43,6 +54,16 @@ export default function SettingsScreen() {
             thumbColor="#fff"
           />
         </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Emergency History</Text>
+        <Text style={styles.historyText}>
+          Received signals: {receivedSignals.length}
+        </Text>
+        <Text style={styles.historyDescription}>
+          Emergency signals received in the last 30 days
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.button}>
@@ -78,14 +99,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   settingText: {
+    flex: 1,
     fontSize: 16,
     fontFamily: 'Inter-Regular',
     color: '#333',
+  },
+  settingDescription: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#666',
+    marginTop: 2,
+    flex: 1,
+  },
+  historyText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#E94560',
+    marginBottom: 5,
+  },
+  historyDescription: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#666',
   },
   button: {
     backgroundColor: '#E94560',
