@@ -15,6 +15,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Emergency',
+          href: "/",
           tabBarIcon: ({ color, size }) => (
             <Shield size={size} color={color} />
           ),
@@ -24,6 +25,7 @@ export default function TabLayout() {
         name="contacts"
         options={{
           title: 'Contacts',
+          href: "/contacts",
           tabBarIcon: ({ color, size }) => (
             <Users size={size} color={color} />
           ),
@@ -33,6 +35,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          href: "/settings",
           tabBarIcon: ({ color, size }) => (
             <Settings size={size} color={color} />
           ),
