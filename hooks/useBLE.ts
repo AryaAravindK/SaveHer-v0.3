@@ -58,11 +58,16 @@ export const useBLE = () => {
       console.warn('BLE manager not available, using mock implementation');
       return WebBLEManager;
     }
-    return new BleManager();
+    try {
+      return new BleManager();
+    } catch (error) {
+      console.warn('BLE Manager initialization failed:', error);
+      return WebBLEManager;
+    }
   });
 
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) return;
 
     const subscription = bleManager?.onStateChange((state: any) => {
       console.log('Bluetooth state changed:', state);
@@ -76,7 +81,7 @@ export const useBLE = () => {
 
     return () => {
       subscription?.remove();
-      if (Platform.OS === 'android') {
+      if (Platform.OS === 'android' && bleManager && bleManager !== WebBLEManager) {
         bleManager?.destroy();
       }
     };
@@ -107,7 +112,7 @@ export const useBLE = () => {
 
   const startBroadcasting = async (userData: any) => {
     try {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
         console.log('BLE broadcasting not available on web platform');
         setIsBroadcasting(true);
         return;
@@ -149,7 +154,7 @@ export const useBLE = () => {
 
   const stopBroadcasting = async () => {
     try {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
         console.log('BLE broadcasting not available on web platform');
         setIsBroadcasting(false);
         return;
@@ -165,7 +170,7 @@ export const useBLE = () => {
 
   const startListening = async (onSignalReceived?: (signal: SOSSignal) => void) => {
     try {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
         console.log('BLE listening not available on web platform');
         setIsListening(true);
         return;
@@ -231,7 +236,7 @@ export const useBLE = () => {
   };
 
   const stopListening = () => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
       setIsListening(false);
       return;
     }
@@ -243,7 +248,7 @@ export const useBLE = () => {
 
   const startScanning = async () => {
     try {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
         console.log('BLE scanning not available on web platform');
         setIsScanning(true);
         return;
@@ -284,7 +289,7 @@ export const useBLE = () => {
   };
 
   const stopScanning = () => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS === 'web' || !bleManager || bleManager === WebBLEManager) {
       setIsScanning(false);
       return;
     }
